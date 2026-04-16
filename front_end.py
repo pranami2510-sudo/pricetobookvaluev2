@@ -2,8 +2,9 @@
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
 import os
 from datetime import datetime
 
@@ -15,13 +16,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Shared FCF CSS
 st.markdown("""
     <style>
     .main-header {
         font-size: 2.5rem;
         font-weight: 700;
         color: #1f77b4;
+        text-align: center;
         margin-bottom: 1rem;
     }
     .metric-card {
@@ -30,25 +32,19 @@ st.markdown("""
         border-radius: 0.5rem;
         border-left: 4px solid #1f77b4;
     }
-    .stMetric {
+    [data-testid="stMetric"] {
         background-color: white;
         padding: 1rem;
         border-radius: 0.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .stMetric label {
+    [data-testid="stMetricValue"] {
         color: #000000 !important;
     }
-    .stMetric [data-testid="stMetricValue"] {
+    [data-testid="stMetricLabel"] {
         color: #000000 !important;
     }
-    .stMetric [data-testid="stMetricDelta"] {
-        color: #000000 !important;
-    }
-    div[data-testid="stMetricValue"] {
-        color: #000000 !important;
-    }
-    div[data-testid="stMetricLabel"] {
+    [data-testid="stMetricDelta"] {
         color: #000000 !important;
     }
     </style>
@@ -633,54 +629,66 @@ else:
     # Plot Equity Curve
     if equity_df is not None:
         st.subheader("📉 Equity Curve")
-        
+
         # Load benchmark if available
         benchmark_df = load_benchmark()
-        
-        # Create figure with better styling
-        fig, ax = plt.subplots(figsize=(14, 6))
-        
+
         # Normalize to percentage returns for better visualization
         initial_equity = equity_df["equity"].iloc[0]
         normalized_equity = equity_df["equity"] / initial_equity
-        
-        # Plot strategy
-        ax.plot(equity_df["date"], normalized_equity, linewidth=2.5, label="Strategy", color="#1f77b4", alpha=0.9)
-        
-        # Plot benchmark if available
+
+        fig = go.Figure()
+
+        # Strategy line
+        fig.add_trace(go.Scatter(
+            x=equity_df["date"], y=normalized_equity,
+            name="Strategy", mode="lines",
+            line=dict(color="#1f77b4", width=2.5)
+        ))
+
+        # Benchmark if available
+        merged = pd.DataFrame()
         if benchmark_df is not None:
-            # Merge on date
-            merged = pd.merge(equity_df[["date"]], benchmark_df[["date", "benchmark_normalized"]], 
+            merged = pd.merge(equity_df[["date"]], benchmark_df[["date", "benchmark_normalized"]],
                             on="date", how="inner")
             if not merged.empty:
-                ax.plot(merged["date"], merged["benchmark_normalized"], 
-                       linewidth=2, label="NIFTY Benchmark", linestyle="--", color="#ff7f0e", alpha=0.8)
-        
-        ax.axhline(y=1.0, color='gray', linestyle=':', alpha=0.5, linewidth=1, label='Initial Capital')
-        ax.set_title(f"Equity Curve - {strategy_id}", fontsize=16, fontweight='bold', pad=20)
-        ax.set_xlabel("Date", fontsize=12, fontweight='bold')
-        ax.set_ylabel("Normalized Equity (Indexed to 1.0)", fontsize=12, fontweight='bold')
-        ax.grid(True, alpha=0.3, linestyle='--')
-        ax.legend(loc='best', fontsize=11, framealpha=0.9)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        # Additional statistics
+                fig.add_trace(go.Scatter(
+                    x=merged["date"], y=merged["benchmark_normalized"],
+                    name="NIFTY Benchmark", mode="lines",
+                    line=dict(color="#ff7f0e", width=2, dash="dash")
+                ))
+
+        # Reference line
+        fig.add_hline(y=1.0, line_dash="dot", line_color="#666666",
+                     annotation_text="Initial Capital", annotation_position="right")
+
+        fig.update_layout(
+            title=f"Equity Curve - {strategy_id}",
+            xaxis_title="Date",
+            yaxis_title="Normalized Equity (Indexed to 1.0)",
+            hovermode="x unified",
+            template="plotly_white",
+            height=500,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Benchmark comparison metrics
         if benchmark_df is not None and not merged.empty:
             st.subheader("📊 Strategy vs Benchmark Comparison")
             comp_col1, comp_col2, comp_col3 = st.columns(3)
-            
+
             strategy_return = (normalized_equity.iloc[-1] - 1) * 100
             benchmark_return = (merged["benchmark_normalized"].iloc[-1] - 1) * 100
-            
+
             with comp_col1:
                 st.metric("Strategy Return", f"{float(strategy_return):.2f}%")
             with comp_col2:
                 st.metric("Benchmark Return", f"{float(benchmark_return):.2f}%")
             with comp_col3:
                 excess_return = strategy_return - benchmark_return
-                st.metric("Excess Return", f"{float(excess_return):.2f}%", 
+                st.metric("Excess Return", f"{float(excess_return):.2f}%",
                          delta=f"{float(excess_return):.2f}%")
     else:
         st.warning(f"⚠️ Equity curve not found for strategy: {strategy_id}")
@@ -737,63 +745,116 @@ else:
         )
         
         st.write(f"📊 Heatmap of **{metric}** by Lookback & Threshold (Exit Method: {heatmap_exit_method.replace('_', ' ').title()})")
-        
-        # Format display
-        if metric in ["CAGR", "max_drawdown", "Max Drawdown", "win_ratio"]:
-            display_df = heatmap_pivot.style.format("{:.2%}").background_gradient(cmap='RdYlGn' if metric != "max_drawdown" and metric != "Max Drawdown" else 'RdYlGn_r')
-        else:
-            display_df = heatmap_pivot.style.format("{:.2f}").background_gradient(cmap='RdYlGn')
-        
-        st.dataframe(display_df, use_container_width=True, height=400)
-        
-        # Plot the heatmap with better styling
-        fig, ax = plt.subplots(figsize=(12, 7))
-        
-        # Choose colormap based on metric
+
+        # Choose colorscale based on metric
         if metric in ["CAGR", "Sharpe", "Calmar", "win_ratio"]:
-            cmap = 'RdYlGn'
+            colorscale = "RdYlGn"
         else:
-            cmap = 'RdYlGn_r'
-        
-        im = ax.imshow(heatmap_pivot, aspect='auto', cmap=cmap, interpolation='nearest')
-        cbar = fig.colorbar(im, ax=ax, label=metric.replace('_', ' ').title(), pad=0.02)
-        cbar.ax.tick_params(labelsize=10)
-        
-        # Label formatting
-        ax.set_xticks(range(len(heatmap_pivot.columns)))
-        ax.set_xticklabels([f"{x:.0%}" for x in heatmap_pivot.columns], rotation=45, ha='right', fontsize=10)
-        ax.set_xlabel("Buy Threshold", fontsize=12, fontweight='bold')
-        
-        ax.set_yticks(range(len(heatmap_pivot.index)))
-        ax.set_yticklabels([f"{int(x)}Q" for x in heatmap_pivot.index], fontsize=10)
-        ax.set_ylabel("Lookback Quarters", fontsize=12, fontweight='bold')
-        
-        ax.set_title(f"Heatmap of {metric.replace('_', ' ').title()} ({heatmap_exit_method.replace('_', ' ').title()})", 
-                    fontsize=14, fontweight='bold', pad=15)
-        
-        # Add text annotations
-        for i in range(len(heatmap_pivot.index)):
-            for j in range(len(heatmap_pivot.columns)):
-                value = heatmap_pivot.iloc[i, j]
-                if pd.notna(value):
-                    if metric in ["CAGR", "max_drawdown", "Max Drawdown", "win_ratio"]:
-                        text = f"{value:.1%}"
-                    else:
-                        text = f"{value:.2f}"
-                    ax.text(j, i, text, ha="center", va="center", 
-                           color="white" if abs(value - heatmap_pivot.min().min()) < abs(value - heatmap_pivot.max().max()) else "black",
-                           fontsize=8, fontweight='bold')
-        
-        plt.tight_layout()
-        st.pyplot(fig)
+            colorscale = "RdYlGn_r"
+
+        # Format text annotations
+        if metric in ["CAGR", "max_drawdown", "Max Drawdown", "win_ratio"]:
+            text_vals = [[f"{v:.1%}" if pd.notna(v) else "" for v in row] for row in heatmap_pivot.values]
+        else:
+            text_vals = [[f"{v:.2f}" if pd.notna(v) else "" for v in row] for row in heatmap_pivot.values]
+
+        fig = go.Figure(data=go.Heatmap(
+            z=heatmap_pivot.values,
+            x=[f"{x:.0%}" for x in heatmap_pivot.columns],
+            y=[f"{int(x)}Q" for x in heatmap_pivot.index],
+            text=text_vals,
+            texttemplate="%{text}",
+            textfont=dict(size=10),
+            colorscale=colorscale,
+            colorbar=dict(title=metric.replace('_', ' ').title()),
+            hovertemplate="Lookback: %{y}<br>Threshold: %{x}<br>" + metric + ": %{text}<extra></extra>"
+        ))
+
+        fig.update_layout(
+            title=f"Heatmap of {metric.replace('_', ' ').title()} ({heatmap_exit_method.replace('_', ' ').title()})",
+            xaxis_title="Buy Threshold",
+            yaxis_title="Lookback Quarters",
+            template="plotly_white",
+            height=500,
+        )
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("⚠️ No valid metrics found for heatmap.")
+
+# ================================
+# 📊 All Strategies Comparison Table
+# ================================
+st.markdown("---")
+st.subheader("📊 All Strategies Comparison")
+
+# Build comparison dataframe from master_results
+comparison_cols = {
+    "lookback_quarters": "Lookback (Q)",
+    "threshold": "Threshold",
+    "exit_method": "Exit Method",
+    "exit_param": "Exit Param",
+}
+metric_cols_map = {}
+if "CAGR" in master_df.columns:
+    metric_cols_map["CAGR"] = "CAGR"
+if "Sharpe" in master_df.columns:
+    metric_cols_map["Sharpe"] = "Sharpe"
+if "Calmar" in master_df.columns:
+    metric_cols_map["Calmar"] = "Calmar"
+dd_col_name = "max_drawdown" if "max_drawdown" in master_df.columns else ("Max Drawdown" if "Max Drawdown" in master_df.columns else None)
+if dd_col_name:
+    metric_cols_map[dd_col_name] = "Max Drawdown"
+if "win_ratio" in master_df.columns:
+    metric_cols_map["win_ratio"] = "Win Ratio"
+trades_col_name = "num_trades" if "num_trades" in master_df.columns else ("Trades" if "Trades" in master_df.columns else None)
+if trades_col_name:
+    metric_cols_map[trades_col_name] = "Trades"
+
+display_cols = list(comparison_cols.keys()) + list(metric_cols_map.keys())
+available_display = [c for c in display_cols if c in master_df.columns]
+comp_df = master_df[available_display].copy()
+rename_map = {**comparison_cols, **metric_cols_map}
+comp_df = comp_df.rename(columns={k: v for k, v in rename_map.items() if k in comp_df.columns})
+
+# Build strategy ID for highlighting
+if not selected.empty:
+    def highlight_selected_row(row):
+        try:
+            row_lq = float(row.get("Lookback (Q)", -1))
+            row_th = float(row.get("Threshold", -1))
+            row_em = str(row.get("Exit Method", ""))
+            row_ep = str(row.get("Exit Param", ""))
+            if (row_lq == float(lookback) and row_th == float(threshold)
+                    and row_em.strip() == str(exit_method).strip()
+                    and row_ep.strip() == str(exit_param).strip()):
+                return ['background-color: #ffd700'] * len(row)
+        except (ValueError, TypeError):
+            pass
+        return [''] * len(row)
+
+    st.dataframe(
+        comp_df.style.apply(highlight_selected_row, axis=1),
+        use_container_width=True,
+        height=400
+    )
+else:
+    st.dataframe(comp_df, use_container_width=True, height=400)
+
+# Download comparison table
+comp_csv = comp_df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Download Comparison Table (CSV)",
+    data=comp_csv,
+    file_name="all_strategies_comparison.csv",
+    mime="text/csv",
+    use_container_width=True
+)
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 20px;'>"
-    "📊 P/BV Backtest Dashboard | Generated with Streamlit"
+    "📊 P/BV Backtest Dashboard | Filter Coffee Finance"
     "</div>",
     unsafe_allow_html=True
 )
