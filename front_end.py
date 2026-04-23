@@ -131,7 +131,7 @@ def safe_format_float(value, decimals=2):
 # =========================
 # Streamlit Front-End
 # =========================
-render_header("📊 P/BV Backtest", "Price-to-Book Value — strategy backtest on Indian equities")
+render_header("P/BV Backtest", "Price-to-Book Value — strategy backtest on Indian equities")
 
 # Load master results
 master_df = load_master_results()
