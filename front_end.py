@@ -16,39 +16,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Shared FCF CSS
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
-    }
-    [data-testid="stMetric"] {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    [data-testid="stMetricValue"] {
-        color: #000000 !important;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #000000 !important;
-    }
-    [data-testid="stMetricDelta"] {
-        color: #000000 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+from fcf_branding import apply_theme, render_header, render_footer
+
+apply_theme()
 
 # =========================
 # Load Benchmark File (NIFTY)
@@ -161,7 +131,7 @@ def safe_format_float(value, decimals=2):
 # =========================
 # Streamlit Front-End
 # =========================
-st.markdown('<h1 class="main-header">📈 P/BV Backtest Result Dashboard</h1>', unsafe_allow_html=True)
+render_header("📊 P/BV Backtest", "Price-to-Book Value — strategy backtest on Indian equities")
 
 # Load master results
 master_df = load_master_results()
@@ -850,11 +820,4 @@ st.download_button(
     use_container_width=True
 )
 
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: #666; padding: 20px;'>"
-    "📊 P/BV Backtest Dashboard | Filter Coffee Finance"
-    "</div>",
-    unsafe_allow_html=True
-)
+render_footer()
